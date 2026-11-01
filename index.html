@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>數學語音家教</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<style>
+:root{--bg:#e8edef;--ink:#1d2a2e;--board:#1f3d33;--chalk:#f4f1e8;--yellow:#f3d36b;--pink:#f2a0a0;--blue:#9fd3f0;--wood:#8b5e34;--line:#c5d0d4;--btn:#1f6f5c}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;line-height:1.6;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+main{max-width:860px;margin:0 auto;padding:16px}
+h1{font-size:1.5rem;margin:8px 0 2px}
+.sub{color:#51656b;margin:0 0 16px}
+.panel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+button,.btn{font:inherit;border:0;border-radius:8px;padding:10px 16px;background:var(--btn);color:#fff;cursor:pointer;min-height:44px}
+button.alt,.btn.alt{background:#fff;color:var(--btn);border:1.5px solid var(--btn)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,.btn:focus-visible,input:focus-visible{outline:3px solid #f0a500;outline-offset:2px}
+input[type=text],input[type=password]{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;min-width:0;flex:1}
+label.btn{display:inline-flex;align-items:center}
+input[type=file]{display:none}
+#drop{border:2px dashed #8aa;border-radius:10px;padding:18px;text-align:center;color:#51656b;margin-top:12px}
+#preview{max-width:100%;max-height:300px;border-radius:6px;display:none;margin:12px auto 0}
+#status{margin:10px 0 0;color:#51656b;min-height:1.6em}
+#status.err{color:#b3261e}
+details summary{cursor:pointer;font-weight:600}
+.hide{display:none!important}
+.frame{background:var(--wood);padding:12px;border-radius:12px;box-shadow:0 3px 0 #5d3d1f}
+#board{background:var(--board);color:var(--chalk);border-radius:6px;height:min(62vh,560px);overflow-y:auto;padding:18px 20px 40px;font-size:1.2rem;line-height:1.9;scroll-behavior:smooth;-webkit-overflow-scrolling:touch}
+#board .prob{border-bottom:2px dashed #ffffff55;padding-bottom:10px;margin-bottom:14px;color:var(--blue)}
+#board .ttl{color:var(--yellow);font-weight:700;margin-top:18px}
+#board .ln{opacity:0;animation:in .5s forwards}
+#board .meta{color:var(--pink);font-weight:700;margin-top:22px;border-top:2px dashed #ffffff55;padding-top:10px}
+@keyframes in{from{opacity:0}to{opacity:1}}
+.katex{font-size:1.1em}
+.ctl{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px}
+#prog{flex:1;color:#51656b;min-width:120px}
+#sub{background:#00000066;color:#fff;padding:8px 12px;border-radius:6px;margin-top:10px;font-size:.95rem;display:none}
+@media (prefers-reduced-motion:reduce){#board{scroll-behavior:auto}#board .ln{animation:none;opacity:1}}
+</style>
+</head>
+<body>
+<main>
+<h1>數學語音家教</h1>
+<p class="sub">貼上一題國中數學題目，AI 老師會一步一步在黑板上寫出來，並用口語講解給你聽。</p>
+
+<div class="panel hide" id="codeBox">
+<div class="row">
+<input type="password" id="code" placeholder="請輸入老師提供的存取碼" autocomplete="off" aria-label="存取碼">
+<button class="alt" id="saveCode">儲存</button>
+</div>
+</div>
+
+<section class="panel" id="inputPanel">
+<div class="row">
+<label class="btn" for="fileIn">上傳檔案</label>
+<label class="btn alt" for="camIn">拍照 / 相簿</label>
+<button class="alt" id="pasteBtn">貼上截圖</button>
+</div>
+<input type="file" id="fileIn" accept="image/*,application/pdf">
+<input type="file" id="camIn" accept="image/*">
+<div id="drop">也可以直接按 Ctrl+V 貼上截圖，或把檔案拖到這裡</div>
+<img id="preview" alt="題目預覽">
+<div class="row" style="margin-top:12px"><button id="goBtn" disabled>解析題目並產生講解</button></div>
+<div id="status" role="status" aria-live="polite"></div>
+</section>
+
+<section id="lesson" class="hide">
+<div class="frame"><div id="board" aria-live="polite"></div></div>
+<div id="sub"></div>
+<div class="ctl">
+<button id="startBtn">開始講解</button>
+<button id="nextBtn" class="hide">下一步</button>
+<button id="replayBtn" class="alt hide">重聽這一步</button>
+<button id="stopBtn" class="alt hide">暫停語音</button>
+<span id="prog"></span>
+<button id="newBtn" class="alt">換一題</button>
+</div>
+</section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+let imgData=null,lesson=null,idx=-1,voice=null,spoken=0;
+
+/* ---------- 存取碼 ---------- */
+const store={get:k=>{try{return localStorage.getItem(k)||""}catch(e){return ""}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+let needCode=false;
+function say(t,err){const s=$('status');s.textContent=t;s.className=err?'err':''}
+fetch('/api/analyze').then(r=>r.json()).then(j=>{needCode=!!j.needCode;if(needCode){$('codeBox').classList.remove('hide');$('code').value=store.get('acode')}}).catch(()=>{});
+$('saveCode').onclick=()=>{store.set('acode',$('code').value.trim());say('已儲存存取碼。')};
+
+/* ---------- 取得圖片 ---------- */
+function loadFile(f){
+  if(!f)return;
+  if(f.type==='application/pdf'){
+    if(f.size>2.8e6){say('PDF 檔案太大（上限約 2.8MB），請改用截圖。',1);return}
+    const r=new FileReader();
+    r.onload=()=>{imgData={mime:'application/pdf',b64:r.result.split(',')[1]};$('preview').style.display='none';ready('已載入 PDF：'+f.name)};
+    r.readAsDataURL(f);return;
+  }
+  if(!f.type.startsWith('image/')){say('請選擇圖片或 PDF 檔。',1);return}
+  const url=URL.createObjectURL(f),im=new Image();
+  im.onload=()=>{ // 縮圖到 1800px，iPad 照片才不會太大
+    const m=1800,s=Math.min(1,m/Math.max(im.width,im.height)),c=document.createElement('canvas');
+    c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);
+    c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+    const d=c.toDataURL('image/jpeg',.88);
+    imgData={mime:'image/jpeg',b64:d.split(',')[1]};
+    $('preview').src=d;$('preview').style.display='block';ready('圖片已載入。');
+    URL.revokeObjectURL(url);
+  };
+  im.onerror=()=>say('這張圖片無法讀取，請換一張。',1);
+  im.src=url;
+}
+function ready(m){$('goBtn').disabled=false;say(m+' 按下「解析題目」開始。')}
+$('fileIn').onchange=e=>{loadFile(e.target.files[0]);e.target.value=''};
+$('camIn').onchange=e=>{loadFile(e.target.files[0]);e.target.value=''};
+document.addEventListener('paste',e=>{
+  const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith('image/')||i.type==='application/pdf');
+  if(it){e.preventDefault();loadFile(it.getAsFile())}
+});
+$('pasteBtn').onclick=async()=>{
+  try{
+    const items=await navigator.clipboard.read();
+    for(const it of items){const t=it.types.find(x=>x.startsWith('image/'));if(t){loadFile(new File([await it.getType(t)],'paste.png',{type:t}));return}}
+    say('剪貼簿裡沒有圖片。',1);
+  }catch(e){say('這個瀏覽器不允許直接讀取剪貼簿，請按 Ctrl+V（或長按 → 貼上）。',1)}
+};
+const dz=$('drop');
+['dragover','dragenter'].forEach(n=>dz.addEventListener(n,e=>{e.preventDefault()}));
+dz.addEventListener('drop',e=>{e.preventDefault();loadFile(e.dataTransfer.files[0])});
+
+/* ---------- 呼叫後端 ---------- */
+async function callApi(){
+  const code=$('code').value.trim();
+  if(needCode&&!code)throw new Error('請先輸入老師提供的存取碼。');
+  if(needCode)store.set('acode',code);
+  say('老師正在看題目、規劃解題步驟…（伺服器忙碌時會自動重試，最久約 1 分鐘）');
+  let r;
+  try{r=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mime:imgData.mime,b64:imgData.b64,code})})}
+  catch(e){throw new Error('網路連線失敗，請檢查網路。')}
+  const j=await r.json().catch(()=>({}));
+  if(r.status===413)throw new Error('檔案太大，請縮小圖片或只截取題目範圍。');
+  if(!r.ok)throw new Error(j.error||('伺服器錯誤 '+r.status));
+  return j;
+}
+$('goBtn').onclick=async()=>{
+  $('goBtn').disabled=true;say('老師正在看題目、規劃解題步驟…請稍候約 10～30 秒。');
+  try{
+    const d=await callApi();
+    if(!d.steps||!d.steps.length)throw new Error('沒有找到題目，請換一張更清楚、只含一題的圖片。');
+    lesson=d;pickVoice();initLesson();say('');
+  }catch(e){say('解析失敗：'+e.message,1)}
+  $('goBtn').disabled=false;
+};
+
+/* ---------- 語音 ---------- */
+function pickVoice(){
+  const vs=speechSynthesis.getVoices().filter(v=>/zh[-_]TW/i.test(v.lang)||/台灣|Taiwan/i.test(v.name));
+  const score=v=>(/美佳|Mei-?Jia/i.test(v.name)?100:0)+(/premium|enhanced|高音質|優化/i.test(v.name)?20:0)+(/google/i.test(v.name)?5:0);
+  voice=vs.sort((a,b)=>score(b)-score(a))[0]||speechSynthesis.getVoices().find(v=>/^zh/i.test(v.lang))||null;
+}
+if('speechSynthesis' in window){speechSynthesis.onvoiceschanged=pickVoice;pickVoice()}
+function speak(text,onend){
+  if(!('speechSynthesis' in window)){onend&&onend();return}
+  speechSynthesis.cancel();
+  const my=++spoken;
+  const parts=text.match(/[^。！？；\n]+[。！？；]?/g)||[text];
+  let i=0;
+  const next=()=>{
+    if(my!==spoken)return;
+    if(i>=parts.length){$('sub').style.display='none';onend&&onend();return}
+    const u=new SpeechSynthesisUtterance(parts[i].trim());
+    u.lang='zh-TW';if(voice)u.voice=voice;u.rate=.95;u.pitch=1.05;
+    $('sub').textContent=parts[i].trim();$('sub').style.display='block';
+    u.onend=()=>{i++;next()};u.onerror=()=>{i++;next()};
+    speechSynthesis.speak(u);
+  };
+  next();
+}
+function stopSpeak(){spoken++;speechSynthesis.cancel();$('sub').style.display='none'}
+
+/* ---------- 黑板 ---------- */
+function render(el){renderMathInElement(el,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\(',right:'\\)',display:false},{left:'\\[',right:'\\]',display:true}],throwOnError:false})}
+function addLine(cls,txt,delay){
+  const d=document.createElement('div');d.className=cls+' ln';d.style.animationDelay=delay+'ms';
+  d.textContent=txt;$('board').appendChild(d);render(d);return d;
+}
+function writeBlock(title,lines,cls){
+  const b=$('board');let t=0;
+  if(title){addLine(cls||'ttl',title,0)}
+  lines.forEach((l,i)=>{t=(i+1)*700;addLine('',l,t)});
+  setTimeout(()=>b.scrollTo({top:b.scrollHeight}),50);
+  const iv=setInterval(()=>b.scrollTo({top:b.scrollHeight}),400);
+  setTimeout(()=>clearInterval(iv),t+800);
+}
+function initLesson(){
+  $('inputPanel').classList.add('hide');$('lesson').classList.remove('hide');
+  const b=$('board');b.innerHTML='';idx=-1;
+  addLine('prob','【題目】'+(lesson.topic?'（'+lesson.topic+'）':'')+'\n'+lesson.problem,0);
+  b.firstChild.style.whiteSpace='pre-wrap';
+  $('startBtn').classList.remove('hide');$('nextBtn').classList.add('hide');$('replayBtn').classList.add('hide');$('stopBtn').classList.add('hide');
+  $('prog').textContent='共 '+lesson.steps.length+' 個步驟，準備好了！';
+  if(!voice)$('prog').textContent+=' （找不到中文語音，將使用裝置預設）';
+}
+function showStep(){
+  const total=lesson.steps.length;
+  $('startBtn').classList.add('hide');$('nextBtn').classList.remove('hide');$('replayBtn').classList.remove('hide');$('stopBtn').classList.remove('hide');
+  if(idx<total){
+    const s=lesson.steps[idx];
+    writeBlock(s.title,s.board||[]);speak(s.speech);
+    $('prog').textContent='第 '+(idx+1)+' / '+total+' 步';
+    $('nextBtn').textContent=idx===total-1?'看學科重點':'下一步';
+  }else{
+    const m=lesson.meta||{board:[],speech:''};
+    writeBlock('★ 這題的學科重點（後設認知）',m.board||[],'meta');speak(m.speech);
+    $('prog').textContent='講解完成';
+    $('nextBtn').classList.add('hide');
+  }
+}
+$('startBtn').onclick=()=>{idx=0;showStep()};
+$('nextBtn').onclick=()=>{idx++;showStep()};
+$('replayBtn').onclick=()=>{const s=idx<lesson.steps.length?lesson.steps[idx].speech:(lesson.meta||{}).speech;speak(s||'')};
+$('stopBtn').onclick=stopSpeak;
+$('newBtn').onclick=()=>{stopSpeak();$('lesson').classList.add('hide');$('inputPanel').classList.remove('hide');imgData=null;$('preview').style.display='none';$('goBtn').disabled=true;say('')};
+</script>
+</body>
+</html>
