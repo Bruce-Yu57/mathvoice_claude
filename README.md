@@ -4,7 +4,7 @@ API Key 只存在伺服器環境變數，瀏覽器看不到。
 
 ## 檔案
 - `index.html`：前端網頁
-- `api/analyze.js`：後端（呼叫 Gemini，Key 從環境變數讀取）
+- `api/analyze.js`：後端（呼叫 Gemini，Key 從環境變數讀取, teach4needs a/c）
 - `vercel.json`：函式最長執行 60 秒
 
 ## 部署到 Vercel
